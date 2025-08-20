@@ -1,0 +1,244 @@
+# HEBNORM - Hebrew Text Normalizer API
+# Cursor IDE Rules and Context
+
+## IMPORTANT: Language Guidelines
+**ALL CODE MUST BE WRITTEN IN ENGLISH:**
+- Comments, docstrings, variable names, function names, class names
+- Documentation, README files, commit messages
+- API documentation and error messages
+- The ONLY Hebrew content should be test data and user-facing text content
+
+## Project Overview
+This is a Hebrew text processing API built with FastAPI that provides:
+- Hebrew text nikud (diacritization) using DictaBERT model
+- Text normalization (letter unification, spell corrections)
+- Basic spell checking
+- Health monitoring and API versioning
+
+## Technology Stack
+- **Backend**: FastAPI + Uvicorn
+- **ML**: Transformers (Hugging Face), PyTorch, DictaBERT model
+- **Validation**: Pydantic v2 + pydantic-settings
+- **Deployment**: Docker + Docker Compose
+- **Health**: psutil for system monitoring
+
+## Project Structure
+```
+HEBNORM/
+├── app/                          # Main application
+│   ├── main.py                   # FastAPI app with /api/v1 prefix
+│   ├── config.py                 # Settings with pydantic-settings
+│   ├── routes/                   # API endpoints
+│   │   ├── nikud.py              # /api/v1/add_nikud
+│   │   ├── normalize.py          # /api/v1/normalize
+│   │   └── spellcheck.py         # /api/v1/spellcheck
+│   └── utils/                    # Business logic
+│       ├── nikud.py              # DictaBERT integration
+│       ├── normalizer.py         # Hebrew text processing
+│       └── spellcheck.py         # Spell checking logic
+├── tests/                        # Test files
+├── examples.py                   # API usage examples
+└── [documentation files]
+```
+
+## Key Endpoints
+- `GET /` - API information and endpoint listing
+- `GET /health` - Detailed system health check
+- `POST /api/v1/add_nikud` - Add Hebrew nikud using DictaBERT (with keep_vowels parameter)
+- `POST /api/v1/normalize` - Normalize Hebrew text
+- `POST /api/v1/spellcheck` - Basic spell checking
+
+## Development Guidelines
+
+### Code Style
+- Use Python 3.8+ features
+- Follow FastAPI best practices
+- Use Pydantic models for request/response validation
+- Include proper error handling and logging
+- Document all functions with docstrings
+- **IMPORTANT: All code comments, docstrings, and documentation must be in English**
+- Variable names should be descriptive and in English
+- Function and class names should follow English naming conventions
+
+### Hebrew Text Processing
+- Handle Hebrew Unicode properly (RTL text)
+- Support both niqqud and non-niqqud text
+- Use proper Hebrew character ranges: \u0590-\u05FF
+- Handle final letter conversions: ך→כ, ם→מ, ן→נ, ף→פ, ץ→צ
+- Remove nikud with regex: [\u0591-\u05C7]
+
+### API Design
+- Use /api/v1 prefix for all endpoints
+- Return JSON with {"input": str, "output": str} format
+- Include proper HTTP status codes
+- Use Pydantic models for validation
+- Support optional parameters with defaults
+
+### Model Integration
+- DictaBERT model: dicta-il/dictabert-large-char-menaked
+- **keep_vowels parameter**: Controls matres lectionis preservation
+  - `false` (default): Vowel letters (א, ה, ו, י) are automatically removed
+  - `true`: Vowel letters are preserved with '*' marker using `mark_matres_lectionis='*'`
+- Handle GPU/CPU fallback automatically
+- Cache model loading for performance
+- Include model attribution (CC-BY-4.0 license)
+
+### Error Handling
+- Graceful degradation for model loading errors
+- Proper validation errors for malformed input
+- Health check should catch and report issues
+- Include helpful error messages in English (user-facing messages can be in Hebrew/English)
+
+### Documentation and Comments Standards
+- **ALL code comments must be written in English**
+- **ALL docstrings must be written in English**
+- **ALL variable names must be in English**
+- **ALL function and class names must be in English**
+- **ALL commit messages must be in English**
+- **ALL API documentation must be in English**
+- Content processing (Hebrew text) is separate from code documentation
+- Use clear, descriptive English comments even when processing Hebrew content
+
+### Dependencies
+- Use pydantic-settings (not pydantic.BaseSettings)
+- Include transformers>=4.41.0 for model compatibility
+- Add psutil for health monitoring
+- Include both httpx and requests for different use cases
+
+### Testing
+- Test all API endpoints with Hebrew text samples
+- Include health check validation
+- Test both successful and error cases
+- Use FastAPI TestClient for integration tests
+
+### Docker
+- Multi-stage builds for production
+- Cache pip dependencies
+- Include model caching directory
+- Set proper environment variables
+
+## Code Examples and Best Practices
+
+### Good Code Example (English comments and naming)
+```python
+def normalize_hebrew_text(text: str, remove_nikud: bool = True) -> str:
+    """
+    Normalize Hebrew text by handling final letters and optionally removing nikud.
+    
+    Args:
+        text: Hebrew text to normalize
+        remove_nikud: Whether to remove nikud marks
+        
+    Returns:
+        Normalized Hebrew text
+    """
+    # Handle final letter conversions
+    final_letter_map = {"ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ"}
+    
+    # Apply final letter normalization
+    for final, normal in final_letter_map.items():
+        text = text.replace(final, normal)
+    
+    if remove_nikud:
+        # Remove nikud marks using Unicode range
+        text = re.sub(r'[\u0591-\u05C7]', '', text)
+    
+    return text.strip()
+```
+
+### Bad Code Example (Mixed languages, unclear naming)
+```python
+def תיקון_טקסט(טקסט: str, הסר_ניקוד: bool = True) -> str:
+    # זה לא טוב - הערות בעברית
+    אותיות_סופיות = {"ך": "כ", "ם": "מ"}  # רע - שמות משתנים בעברית
+    return טקסט  # רע
+```
+
+## Common Issues & Solutions
+
+### Pydantic Import Error
+```python
+# OLD (Pydantic v1)
+from pydantic import BaseSettings
+
+# NEW (Pydantic v2)
+from pydantic_settings import BaseSettings
+```
+
+### Hebrew Text Handling
+```python
+# Proper Hebrew text validation
+import re
+
+def is_hebrew_text(text: str) -> bool:
+    return bool(re.search(r'[\u0590-\u05FF]', text))
+
+def remove_nikud(text: str) -> str:
+    return re.sub(r'[\u0591-\u05C7]', '', text)
+```
+
+### Model Loading Pattern
+```python
+import torch
+from transformers import AutoModel, AutoTokenizer
+
+# GPU/CPU detection
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Lazy loading in global scope
+tokenizer = None
+model = None
+
+def get_model():
+    global tokenizer, model
+    if model is None:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+        model.to(device).eval()
+    return tokenizer, model
+
+def add_nikud_with_vowels(text: str, keep_vowels: bool = False) -> str:
+    """Add nikud with optional vowel preservation"""
+    mark_matres_lectionis = '*' if keep_vowels else None
+    return model.predict([text], tokenizer, mark_matres_lectionis=mark_matres_lectionis)[0]
+```
+
+## Environment Variables
+```bash
+APP_HOST=0.0.0.0
+APP_PORT=8000
+NIKUD_MODEL=dicta-il/dictabert-large-char-menaked
+HF_HOME=/app/.cache
+```
+
+## License Notes
+- Project: MIT License
+- DictaBERT Model: CC-BY-4.0 (requires attribution to Dicta)
+- Always include proper attribution in documentation
+
+## When Making Changes
+1. **Ensure ALL new code follows English-only language guidelines**
+2. Update corresponding tests
+3. Update documentation if API changes
+4. Check Hebrew text handling edge cases
+5. Verify Docker builds still work
+6. Test health endpoints after changes
+7. Update examples if endpoint signatures change
+8. **Review that no Hebrew comments or variable names were introduced**
+
+## Helpful Commands
+```bash
+# Run locally
+uvicorn app.main:app --reload
+
+# Run tests
+python test_simple.py
+python examples.py
+pytest tests/
+
+# Docker
+docker-compose up --build
+
+# Health check
+curl http://localhost:8000/health
+```

@@ -1,0 +1,3 @@
+docker rm -f hebnorm || true
+docker build -t hebnorm:latest .
+docker run -d -p 8000:8000 --name hebnorm hebnorm:latest

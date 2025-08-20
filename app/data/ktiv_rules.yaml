@@ -1,0 +1,55 @@
+rules:
+  - name: "הוספת ו׳ לתנועת o"
+    condition:
+      and:
+        - is_nikud_in: 
+            nikuds: ["holam", "qamats_qatan"]
+            pos: 0
+        - not:
+            - is_start: true
+    action:
+      - add_after: 
+          letter: "ו"
+    exceptions:
+      - name: "חטף קמץ פנימי"
+        condition:
+          and:
+            - is_nikud_in:
+                nikuds: ["hataph_qamats"]
+                pos: 0
+            - not:
+                - is_start: true
+        action:
+          - remove  # כאן בעצם אין הוספה
+      - name: "חריגי סיום באל״ף"
+        condition:
+          and:
+            - is_letter_in:
+                letters: ["א"]
+                pos: 1
+            - is_final: true
+        action:
+          - add_after:
+              letter: "ו"
+
+  - name: "הסרת ו׳ לועזית"
+    condition:
+      and:
+        - is_letter_in:
+            letters: ["ו"]
+            pos: 0
+        - is_loazi: true
+    action:
+      - remove
+
+  - name: "חריגי רשימות"
+    condition:
+      or:
+        - is_word_in_list:
+            list_name: "exceptions_group_a"
+            partial: false
+        - is_word_in_list:
+            list_name: "exceptions_group_b"
+            partial: true
+    action:
+      - remove
