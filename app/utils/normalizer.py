@@ -83,7 +83,7 @@ def split_to_words_and_letters(text: str) -> list[list[dict]]:
     words_with_letters = []
     
     for word in words:
-        letters = split_hebrew_word_to_letters(word)
+        letters = split_hebrew_word_to_letters(word['word'])
         words_with_letters.append(letters)
     
     return words_with_letters
@@ -124,6 +124,8 @@ def normalize_final_letters(text: str) -> str:
         result_words.append(word)
     
     return ' '.join(result_words)
+    #TODO: use separators from split_to_words
+    
 
 def normalize_full_ktiv(text: str) -> str:
     """
