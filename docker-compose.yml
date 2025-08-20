@@ -4,32 +4,18 @@ services:
   hebnorm:
     build:
       context: .
-      dockerfile: Dockerfile.dev   # ← כאן תשתמש ב-dev בזמן פיתוח
+      dockerfile: Dockerfile.dev
     ports:
       - "8000:8000"
     environment:
       - APP_HOST=0.0.0.0
       - APP_PORT=8000
-      - NIKUD_MODEL=dicta-il/dictabert-large-char-menaked
       - HF_HOME=/app/.cache
       - TRANSFORMERS_CACHE=/app/.cache
       - PYTHONPATH=/app
       - LOG_LEVEL=INFO
-      - MODEL_CACHE_DIR=/app/.cache
       - DEV_MODE=true
-      - MAX_WORKERS=1
-      - TIMEOUT=30
-      - CORS_ORIGINS=*
-      - DEBUG=true
-      - ENVIRONMENT=development
-      - VERSION=0.1.0
-      - API_PREFIX=/api/v1
-      - MODEL_DEVICE=auto
-      - MODEL_TRUST_REMOTE_CODE=true
-      - MODEL_CACHE_SIZE=1024
-      - MODEL_DOWNLOAD_TIMEOUT=300
-      - MODEL_LOADING_STRATEGY=lazy
     volumes:
-      - ./app:/app/app          # מיפוי קוד חי
-      - ./.cache:/app/.cache    # לשמור cache של המודל
+      - ./app:/app/app          # קוד חי
+      - ./.cache:/app/.cache    # cache של המודלים
     restart: unless-stopped
