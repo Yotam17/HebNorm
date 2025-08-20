@@ -224,23 +224,27 @@ def normalize_full_ktiv(text: str) -> str:
                         i += 1  # Skip the inserted yod in next iteration
             
             # Step 7: Handle yod-vav doubling conditions
-            elif current_char in ['י', 'ו']:
+            elif current_char in ['י', 'ו'] and current_nikud is not None:
                 # Check yod-vav doubling conditions
                 is_first = (i == 0)
                 is_last = (i == len(word_letters) - 1)
                 
                 if not is_first and not is_last:
-                    prev_char = word_letters[i - 1]['letter']
-                    prev_nikud = word_letters[i - 1].get('nikud')
-                    next_char = word_letters[i + 1]['letter']
-                    next_nikud = word_letters[i + 1].get('nikud')
-                    
-                    # Check if previous and next letters are not אהוי without nikud
-                    prev_has_nikud = prev_nikud is not None
-                    next_has_nikud = next_nikud is not None
+                    prevent_yod_vav_doubling = False
+
+                    if current_nikud == 'י':
+                        prev_char = word_letters[i - 1]['letter']
+                        prev_nikud = word_letters[i - 1].get('nikud')
+                        next_char = word_letters[i + 1]['letter']
+                        next_nikud = word_letters[i + 1].get('nikud')
+                        
+                        # Check if previous and next letters are not אהוי without nikud
+                        prev_yod_prevent = prev_nikud is not None or prev_char not in ['א', 'ה', 'ו', 'י']
+                        next_yod_prevent = next_nikud is not None or next_char not in ['א', 'ה', 'ו', 'י']
+                        prevent_yod_vav_doubling = prev_yod_prevent or next_yod_prevent
                     
                     # If both previous and next have nikud (or are not אהוי), double the letter
-                    if prev_has_nikud and next_has_nikud:
+                    if not prevent_yod_vav_doubling:
                         # Insert duplicate letter without nikud or dagesh
                         duplicate_letter = {
                             'letter': current_char,
