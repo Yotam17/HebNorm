@@ -1,2 +1,4 @@
-torch==2.8.0
+# requirements.models.txt
+--find-links /wheels
+torch
 transformers==4.55.2

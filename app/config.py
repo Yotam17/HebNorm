@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     model_trust_remote_code: bool = True  # Trust remote code for model loading
     model_cache_size: int = 1024  # Model cache size in MB
     model_download_timeout: int = 300  # Model download timeout in seconds
+    spellchecker_max_edit_distance: int = 2
+    spellchecker_prefix_length: int = 7
+    spellchecker_corpus_dir: str = "app/data/spellcheck_corpus"
 
     class Config:
         env_file = ".env"

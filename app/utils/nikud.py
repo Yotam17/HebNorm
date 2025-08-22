@@ -1,9 +1,12 @@
+print(1)
 import torch
+print(2)
 from transformers import AutoModel, AutoTokenizer
+print(4)
 from app.config import settings
-
+print(5)
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
+print(3)
 tokenizer = AutoTokenizer.from_pretrained(settings.nikud_model)
 model = AutoModel.from_pretrained(settings.nikud_model, trust_remote_code=True)
 model.to(device).eval()

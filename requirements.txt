@@ -8,5 +8,4 @@ httpx
 requests
 psutil
 pytest
-
-# כל שאר התלויות ה"קלות"
+symspellpy

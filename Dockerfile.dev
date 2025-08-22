@@ -1,15 +1,29 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
+# 🟢 pip מודרני
+RUN pip install --upgrade pip setuptools wheel
+
+# 🟢 נתקין את torch מה-wheel המקומי בלבד
+# ככה הוא לא ינסה לקמפל, ולא ינסה להוריד מהאינטרנט אם יש התאמה
+COPY wheels/ /wheels/
+RUN pip install --no-index --find-links=/wheels torch transformers
+
+# 🟢 תלויות כבדות – transformers וכו'
 COPY requirements.models.txt .
-RUN pip install --no-cache-dir -r requirements.models.txt
+RUN pip install --no-cache-dir -r requirements.models.txt --only-binary=:all:
 
+# 🟢 תלויות קלות
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --only-binary=:all:
 
+# 🟢 watchfiles (פיתוח)
 RUN pip install watchfiles
 
+# 🟢 קוד האפליקציה
 COPY . .
 
+# 🟢 הרצה
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
