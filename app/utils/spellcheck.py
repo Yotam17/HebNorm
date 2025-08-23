@@ -142,13 +142,24 @@ def hebrew_rerank(symspell, word: str, top_k: int = 5):
     """
     candidates = symspell.lookup(word, verbosity=2, max_edit_distance=2)
     print(candidates)
+    for c in candidates:
+        print(c.term,c.count)
 
     # Re-rank with weighted distance
-    ranked = sorted(
-        [(c.term, weighted_levenshtein(word, c.term), c.count) for c in candidates],
-        key=lambda x: (x[1], -x[2])  # קודם לפי מרחק מותאם, אח"כ לפי שכיחות
-    )
+    try:
+        reranked_candidates = [{"term": c.term, "distance": weighted_levenshtein(word, c.term), "count": c.count} for c in candidates]
+        print("reranked_candidates",reranked_candidates)
+        ranked = sorted(
+            reranked_candidates,
+            key=lambda x: (x["distance"], -x["count"])  # קודם לפי מרחק מותאם, אח"כ לפי שכיחות
+        )
+    except Exception as e:
+        print(21)
+        print(e)
 
+    print(3)
+
+    print(ranked)
     return ranked[:top_k]
 
 
@@ -182,8 +193,10 @@ class SpellChecker:
     def correct_word(self, word: str) -> str:
         print(self,word)
         suggestions = hebrew_rerank(self.symspell, word)
+        print(2)
         if suggestions:
-            return suggestions[0].term
+            print(suggestions)
+            return suggestions[0]['term']
         return word
 
     def correct_text(self, text: str) -> str:

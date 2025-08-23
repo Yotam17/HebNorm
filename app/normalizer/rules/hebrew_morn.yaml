@@ -1,0 +1,25 @@
+function_costs:
+  is_nikud: 0
+  not_is_letter: 0
+  in_list: 7               # יקר: כולל לפעמים ניתוח מורפו/תחביר
+  is_syntactic_feature: 10 # יקר מאוד
+
+rules:
+  - name: add_vav_after_holam
+    description: "הוספת ו׳ אחרי חולם"
+    conditions:
+      all:
+        - function: is_nikud
+          args: { pos: 0, nikuds: ["holam"] }
+        - function: not_is_letter
+          args: { pos: 1, letters: ["ו"] }
+
+    # תחביר נוח לכותב → הקומפיילר מתרגם ל־NOT( … )
+    exceptions:
+      any:
+        - lists: ["NON_VAV_ADD_NAMES", "NO_VAV_BEFORE_ALEF"]
+        - words: ["אוקטבה"]   # חריג מקומי לחוק
+
+    actions:
+      - function: add_after
+        args: { letter: "ו" }
