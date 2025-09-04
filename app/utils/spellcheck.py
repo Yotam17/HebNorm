@@ -1,5 +1,5 @@
 import pathlib
-from symspellpy import SymSpell
+from symspellpy import SymSpell, Verbosity
 import re
 import csv
 
@@ -83,35 +83,58 @@ class HebrewTokenizer:
         return valid_tokens
 
 
+import pathlib
+
 class CorpusLoader:
     def __init__(self, data_dir: str):
         self.data_dir = pathlib.Path(data_dir)
 
-    def load_texts(self) -> list[str]:
-        print("Loading texts from ", self.data_dir)
-        texts = []
+    def load_texts(self):
+        """Generator – מחזיר שורות טקסט מכל הקבצים בהדרגה"""
+        print("Streaming texts from", self.data_dir)
+
         for file in self.data_dir.glob("*.txt"):
             print(file)
-            texts.append(file.read_text(encoding="utf-8"))
-        return texts
+            with file.open(encoding="utf-8") as f:
+                for line in f:
+                    yield line.strip()
 
-    def load_tokens(self, tokenizer) -> list[str]:
-        texts = self.load_texts()
-        tokens = []
-        for t in texts:
-            norm = tokenizer.normalize(t)
-            tokens.extend(tokenizer.tokenize(norm))
-        return tokens
+        for file in self.data_dir.glob("*.csv"):
+            print(file)
+            with file.open(encoding="utf-8") as f:
+                for line in f:
+                    yield line.strip()
+
+    def load_tokens(self, tokenizer):
+        """Generator – מנרמל ומחזיר טוקנים בהדרגה"""
+        # Global counter for progress tracking
+        global line_counter
+        line_counter = 0
+        
+        for text in self.load_texts():
+            line_counter += 1
+            
+            # Display progress every 100,000 lines
+            if line_counter % 100000 == 0:
+                print(f"📊 Processed {line_counter:,} lines...")
+                
+            norm = tokenizer.normalize(text)
+            for tok in tokenizer.tokenize(norm):
+                yield tok
 
 from collections import Counter
 
 # עלויות החלפה מותאמות לעברית
 CONFUSIONS = {
-    ("א", "ע"): 0.5, ("ע", "א"): 0.5,
-    ("כ", "ק"): 0.5, ("ק", "כ"): 0.5,
-    ("ת", "ט"): 0.5, ("ט", "ת"): 0.5,
+    ("א", "ע"): 0.3, ("ע", "א"): 0.3,
+    ("א", "ה"): 0.3, ("ה", "א"): 0.3,
+    ("ה", "ע"): 0.7, ("ע", "ה"): 0.7,
+    ("ב", "ו"): 0.8, ("ו", "ב"): 0.8,
+    ("כ", "ק"): 0.3, ("ק", "כ"): 0.3,
+    ("ת", "ט"): 0.3, ("ט", "ת"): 0.3,
     ("ס", "ש"): 0.5, ("ש", "ס"): 0.5,
     ("ח", "כ"): 0.5, ("כ", "ח"): 0.5,
+    ("ם", "ן"): 0.7, ("ן", "ם"): 0.7,
 }
 
 def weighted_levenshtein(a: str, b: str) -> float:
@@ -140,69 +163,155 @@ def hebrew_rerank(symspell, word: str, top_k: int = 5):
     """
     משתמש ב-SymSpell כדי למצוא מועמדים ואז מדרג עם weighted levenshtein.
     """
-    candidates = symspell.lookup(word, verbosity=2, max_edit_distance=2)
-    print(candidates)
-    for c in candidates:
-        print(c.term,c.count)
+    # חובה להשתמש ב-Verbosity.ALL כדי לקבל את כל המועמדים
+    candidates = symspell.lookup(word, verbosity=Verbosity.ALL, max_edit_distance=2)
 
-    # Re-rank with weighted distance
-    try:
-        reranked_candidates = [{"term": c.term, "distance": weighted_levenshtein(word, c.term), "count": c.count} for c in candidates]
-        print("reranked_candidates",reranked_candidates)
-        ranked = sorted(
-            reranked_candidates,
-            key=lambda x: (x["distance"], -x["count"])  # קודם לפי מרחק מותאם, אח"כ לפי שכיחות
-        )
-    except Exception as e:
-        print(21)
-        print(e)
+    print(f"      🔍 All suggestions for '{word}':")
+    for i, suggestion in enumerate(candidates[:top_k], 1):  # Show top 5
+        distance = suggestion.distance
+        count = suggestion.count
+        term = suggestion.term
+        print(f"         {i}. '{term}' (distance: {distance}, frequency: {count})")
 
-    print(3)
 
-    print(ranked)
+    reranked_candidates = [
+        {
+            "term": c.term,
+            "distance": weighted_levenshtein(word, c.term),
+            "count": c.count,
+        }
+        for c in candidates
+    ]
+
+    ranked = sorted(
+        reranked_candidates,
+        key=lambda x: (x["distance"], -x["count"])  # קודם לפי מרחק מותאם, אח"כ לפי שכיחות
+    )
+
     return ranked[:top_k]
 
 
-class SymSpellBuilder:
-    def __init__(self, max_edit_distance, prefix_length):
-        self.sym_spell = SymSpell(max_edit_distance, prefix_length)
+from itertools import islice
+from typing import Iterable, List
 
-    def build_from_tokens(self, tokens: list[str]):
-        # ספירת תדירויות
-        counts = Counter(tokens)
-        for word, freq in counts.items():
+class SymSpellBuilder:
+    """
+    Build SymSpell dictionary efficiently:
+    1) accumulate counts in-memory via Counter (chunked)
+    2) prune by min_freq
+    3) load into SymSpell (with tuned params)
+    """
+
+    def __init__(self, max_edit_distance: int = 1, prefix_length: int = 5) -> None:
+        # עדיף שמות פרמטרים מפורשים (אבל גם positional עובד)
+        self.sym_spell = SymSpell(
+            max_dictionary_edit_distance=max_edit_distance,
+            prefix_length=prefix_length,
+        )
+        self.max_edit_distance = max_edit_distance
+        self.prefix_length = prefix_length
+
+    # ---------- helpers ----------
+
+    @staticmethod
+    def chunked(iterable: Iterable[str], size: int) -> Iterable[List[str]]:
+        """Yield lists of size `size` from iterable (last may be smaller)."""
+        it = iter(iterable)
+        while True:
+            chunk = list(islice(it, size))
+            if not chunk:
+                break
+            yield chunk
+
+    @staticmethod
+    def build_counts_from_stream(tokens: Iterable[str], chunk_size: int = 1_000_000, max_chunks: int = 10000) -> Counter:
+        """Accumulate token frequencies into a single Counter by chunks."""
+        print("Building counts from stream...")
+        counts = Counter()
+        for i,chunk in enumerate(SymSpellBuilder.chunked(tokens, chunk_size)):
+            if i > max_chunks:
+                break
+            # Progress update every 5 chunks to avoid spam
+            if i % 5 == 0:
+                print(f"Processing chunk {i}/{max_chunks} (size: {len(chunk):,})")
+            counts.update(chunk)
+        print("Finished building counts from stream")
+        return counts
+
+    @staticmethod
+    def prune_counts(counts: Counter, min_freq: int) -> List[tuple[str, int]]:
+        """Filter rare tokens after full accumulation."""
+        if min_freq <= 1:
+            return list(counts.items())
+        return [(w, c) for w, c in counts.items() if c >= min_freq]
+
+    # ---------- main API ----------
+
+    def build_symspell_from_counts(self, items: List[tuple[str, int]]) -> None:
+        """Populate self.sym_spell from (word, freq) pairs."""
+        for word, freq in items:
+            # ב־symspellpy זה מצטבר אם המילה כבר קיימת
             self.sym_spell.create_dictionary_entry(word, freq)
 
-    def get_spellchecker(self):
-        """Return the built SymSpell object"""
+    def build_from_tokens(
+        self,
+        tokens: Iterable[str],
+        flush_every: int = 10_000_000,
+        min_freq: int = 1,
+    ) -> None:
+        """Full pipeline: counts -> prune -> symspell."""
+        counts = self.build_counts_from_stream(tokens, chunk_size=flush_every, max_chunks=10000)
+        items = self.prune_counts(counts, min_freq=min_freq)
+        self.build_symspell_from_counts(items)
+
+    def get_spellchecker(self) -> SymSpell:
+        """Return the built SymSpell object."""
         return self.sym_spell
 
-    def save_dictionary(self, filepath: str):
+    # ---------- I/O ----------
+    def save_dictionary(self, filepath: str) -> None:
+        """
+        Save as 'term count' (space-separated), compatible with
+        sym_spell.load_dictionary(..., term_index=0, count_index=1).
+        """
         with open(filepath, "w", encoding="utf-8") as f:
-            for word, count in self.sym_spell.words.items():
-                f.write(f"{word} {count}\n")
+            for term, val in self.sym_spell.words.items():
+                # val הוא בדרך כלל int; אם זו גירסה/פורק עם אובייקטים, ננסה .count
+                if isinstance(val, int):
+                    freq = val
+                elif hasattr(val, "count"):
+                    freq = int(val.count)
+                elif isinstance(val, (list, tuple)) and val and isinstance(val[0], int):
+                    # גיבוי נדיר אם נשמר כמבנה אחר
+                    freq = val[0]
+                else:
+                    raise TypeError(f"Unsupported value type for term {term!r}: {type(val)}")
+                f.write(f"{term} {freq}\n")
 
-    def load(self, filepath):
-        self.sym_spell.load_dictionary(filepath, 0, 1)
+    def load(self, filepath: str, term_index: int = 0, count_index: int = 1, separator: str = " ") -> None:
+        # אתחול נקי על בסיס הערכים ששמרנו
+        self.sym_spell = SymSpell(max_dictionary_edit_distance=self.max_edit_distance,
+                                prefix_length=self.prefix_length)
+
+        ok = self.sym_spell.load_dictionary(filepath, term_index, count_index, separator)
+        if not ok:
+            raise FileNotFoundError(f"Could not load dictionary from {filepath}")
 
 class SpellChecker:
     def __init__(self, symspell, tokenizer):
         self.symspell = symspell
         self.tokenizer = tokenizer
 
-    def correct_word(self, word: str) -> str:
-        print(self,word)
-        suggestions = hebrew_rerank(self.symspell, word)
-        print(2)
+    def correct_word(self, word: str, top_k: int = 1000) -> str:
+        suggestions = hebrew_rerank(self.symspell, word, top_k)
         if suggestions:
-            print(suggestions)
-            return suggestions[0]['term']
-        return word
+            return suggestions[0]['term'],suggestions
+        return word,[]
 
     def correct_text(self, text: str) -> str:
         norm = self.tokenizer.normalize(text)
         tokens = self.tokenizer.tokenize(norm)
-        corrected_tokens = [self.correct_word(t) for t in tokens]
+        corrected_tokens = [self.correct_word(t)[0] for t in tokens]
         return " ".join(corrected_tokens)
 
 
@@ -228,8 +337,9 @@ def spellchecker_test(spellchecker, filename: str):
     
     # Track incorrect corrections for display
     incorrect_corrections = []
-    
-    try:
+
+
+    try:        
         with open(filename, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             
@@ -251,18 +361,29 @@ def spellchecker_test(spellchecker, filename: str):
                 total_words += 1
                 
                 # Get spellchecker correction
-                corrected = spellchecker.correct_word(form)
-                
+                corrected,suggestions = spellchecker.correct_word(form)
+
                 # Check if correction is correct
                 if corrected == correct:
                     correctly_corrected += 1
-                    print(f"   ✅ Row {row_num}: '{form}' → '{corrected}' (correct)")
+                    #print(f"   ✅ Row {row_num}: '{form}' → '{corrected}' (correct)")
                 elif corrected == form:
                     not_corrected += 1
                     print(f"   ⚠️  Row {row_num}: '{form}' → '{corrected}' (not corrected)")
                 else:
                     incorrectly_corrected += 1
-                    print(f"   ❌ Row {row_num}: '{form}' → '{corrected}' (expected: '{correct}')")
+                    print(f"   ❌ Row {row_num}: '{form}' → '{corrected}' (expected: '{correct}'), suggestions: {suggestions}")
+                    
+                    # Print formatted suggestions for debugging
+                    if suggestions:
+                        print(f"      🔍 All suggestions for '{form}':")
+                        for i, suggestion in enumerate(suggestions[:5], 1):  # Show top 5
+                            distance = suggestion.get('distance', 'N/A')
+                            count = suggestion.get('count', 'N/A')
+                            term = suggestion.get('term', 'N/A')
+                            print(f"         {i}. '{term}' (distance: {distance}, frequency: {count})")
+                    else:
+                        print(f"      🔍 No suggestions found for '{form}'")
                     
                     # Store for summary
                     incorrect_corrections.append({
@@ -318,7 +439,7 @@ def spellchecker_test(spellchecker, filename: str):
     
     return stats
 
-def builder_spellcheck():
+def builder_spellcheck(load_from_file: bool = True):
     """
     Build spellchecker from corpus.
     This function requires the app to be running or proper environment setup.
@@ -326,44 +447,34 @@ def builder_spellcheck():
     try:
         # Try to import from app config
         from app.config import settings
+        print("settings",settings)
         loader = CorpusLoader(settings.spellchecker_corpus_dir)    
     except ImportError:
         # Fallback for when running standalone
         print("⚠️  Warning: Could not import app.config. Using default values.")
         # Use default values for standalone testing
-        loader = CorpusLoader("./data/corpus")  # Default path
+        exit(1)
     
     try:
         # 1. טוקניזציה
         tokenizer = HebrewTokenizer()
-
-        # 2. Load corpus
-        tokens = loader.load_tokens(tokenizer)
-
-        # 3. Build dictionary
         builder = SymSpellBuilder(2, 7)  # Default values
-        builder.build_from_tokens(tokens)
 
-        builder.save_dictionary("app/data/symspell/symspell.txt")
-
-        #builder.load("app/data/symspell/symspell.txt")
+        if load_from_file:
+            builder.load("app/data/symspell/symspell.txt")
+            print(f"Loaded dictionary with {len(builder.sym_spell.words):,} words")
+        else:
+            # 2. Load corpus
+            tokens = loader.load_tokens(tokenizer)
+            # 3. Build dictionary
+            builder.build_from_tokens(tokens, flush_every=10000000, min_freq=5)
+            builder.save_dictionary("app/data/symspell/symspell.txt")
 
         # 4. Create spellchecker
         spellchecker = SpellChecker(builder.get_spellchecker(), tokenizer)
 
+    
         print("✅ Spellchecker built successfully!")
-        print(f"Sample correction: 'ראיון' → '{spellchecker.correct_word('ראיון')}'")
-        print(f"Sample correction: 'ראיוש' → '{spellchecker.correct_word('ראיוש')}'")
-        
-        # Example of how to test the spellchecker
-        print("\n💡 To test the spellchecker with a CSV file:")
-        print("   stats = spellchecker_test(spellchecker, 'test_data.csv')")
-        print("   # CSV should have columns: form,correct")
-        print("   # Example CSV content:")
-        print("   # form,correct")
-        print("   # ראיון,ראיון")
-        print("   # ראיוש,ראיון")
-        print("   # עובדים,עובדים")
         
         return spellchecker
         
@@ -393,9 +504,9 @@ if __name__ == "__main__":
     print("=" * 40)
     
     # Try to build the spellchecker
-    spellchecker = builder_spellcheck()
+    spellchecker = builder_spellcheck(load_from_file=True)
 
-    test_filename = "app/data/spellcheck_test/spelling_errors.csv"
+    test_filename = "app/data/spellcheck_test/spelling_errors2.csv"
     stats = spellchecker_test(spellchecker, test_filename)
     print(stats)
     
